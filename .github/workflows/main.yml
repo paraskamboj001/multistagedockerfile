@@ -6,7 +6,7 @@ on:
 
 jobs:
   build-deploy:
-    runs-on: self-hosted   # ✅ changed from ubuntu-latest
+    runs-on: self-hosted
 
     permissions:
       contents: read
@@ -20,21 +20,34 @@ jobs:
     - name: Login to GHCR
       run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-    # 3. Build Image (Multi-stage Dockerfile)
+    # 3. Build Image (with cache)
     - name: Build Image
-      run: docker build -t ghcr.io/${{ github.repository }}/app:latest .
+      run: |
+        docker pull ghcr.io/${{ github.repository }}/app:latest || true
+        docker build \
+          --cache-from=ghcr.io/${{ github.repository }}/app:latest \
+          -t ghcr.io/${{ github.repository }}/app:latest .
 
     # 4. Push Image
     - name: Push Image
       run: docker push ghcr.io/${{ github.repository }}/app:latest
 
-    # 5. Stop old container
+    # 5. Pull latest image (clean deploy)
+    - name: Pull latest image
+      run: docker pull ghcr.io/${{ github.repository }}/app:latest
+
+    # 6. Stop old container
     - name: Stop old container
       run: |
         docker stop app || true
         docker rm app || true
 
-    # 6. Run new container (from pushed image)
+    # 7. Run new container (PORT FIXED ✅)
     - name: Run new container
       run: |
-        docker run -d -p 3000:3000 --name app ghcr.io/${{ github.repository }}/app:latest
+        docker run -d -p 8700:3000 --name app \
+        ghcr.io/${{ github.repository }}/app:latest
+
+    # 8. Cleanup old images (optional but recommended)
+    - name: Cleanup
+      run: docker image prune -af
