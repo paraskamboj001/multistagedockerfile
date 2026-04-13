@@ -13,48 +13,60 @@ jobs:
       packages: write
 
     steps:
-    # 1. Checkout
-    - uses: actions/checkout@v3
+    # 1. Checkout code
+    - name: Checkout
+      uses: actions/checkout@v3
 
     # 2. Login to GHCR
     - name: Login to GHCR
       run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-    # 3. Build Image (with cache)
+    # 3. Pull latest image for cache
+    - name: Pull latest image (cache)
+      run: docker pull ghcr.io/${{ github.repository }}/app:latest || true
+
+    # 4. Build Docker image
     - name: Build Image
       run: |
-        docker pull ghcr.io/${{ github.repository }}/app:latest || true
         docker build \
           --cache-from=ghcr.io/${{ github.repository }}/app:latest \
           -t ghcr.io/${{ github.repository }}/app:latest .
 
-    # 4. Push Image
+    # 5. Push image to GHCR
     - name: Push Image
       run: docker push ghcr.io/${{ github.repository }}/app:latest
 
-    # 5. Pull latest image (clean deploy)
-    - name: Pull latest image
-      run: docker pull ghcr.io/${{ github.repository }}/app:latest
+    # 6. Ensure network exists
+    - name: Ensure Network Exists
+      run: docker network create paras-app || true
 
-    # 6. Stop old container
+    # 7. Ensure Mongo container is running
+    - name: Ensure Mongo Running
+      run: |
+        docker start mongo || docker run -d \
+          --name mongo \
+          --network paras-app \
+          -v mongodata:/data/db \
+          mongo
+
+    # 8. Stop & remove old app container
     - name: Stop old container
       run: |
         docker stop app || true
         docker rm app || true
 
-    # 🔥 NEW (optional safety - create network if not exists)
-    - name: Ensure Network Exists
-      run: docker network create paras-app || true
-
-    # 7. Run new container (ONLY CHANGE = network added)
+    # 9. Run new container with ENV from GitHub Secrets ✅
     - name: Run new container
       run: |
         docker run -d \
           --name app \
           --network paras-app \
+          -e MONGO_URI=${{ secrets.MONGO_URI }} \
+          -e TOKEN_SECRET=${{ secrets.TOKEN_SECRET }} \
+          -e DOMAIN=${{ secrets.DOMAIN }} \
           -p 8700:3000 \
           ghcr.io/${{ github.repository }}/app:latest
 
-    # 8. Cleanup old images (optional but recommended)
+    # 10. Cleanup unused images
     - name: Cleanup
       run: docker image prune -af
