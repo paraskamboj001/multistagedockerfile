@@ -42,11 +42,18 @@ jobs:
         docker stop app || true
         docker rm app || true
 
-    # 7. Run new container (PORT FIXED ✅)
+    # 🔥 NEW (optional safety - create network if not exists)
+    - name: Ensure Network Exists
+      run: docker network create paras-app || true
+
+    # 7. Run new container (ONLY CHANGE = network added)
     - name: Run new container
       run: |
-        docker run -d -p 8700:3000 --name app \
-        ghcr.io/${{ github.repository }}/app:latest
+        docker run -d \
+          --name app \
+          --network paras-app \
+          -p 8700:3000 \
+          ghcr.io/${{ github.repository }}/app:latest
 
     # 8. Cleanup old images (optional but recommended)
     - name: Cleanup
